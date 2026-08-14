@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Push-Up Counter</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b0b0b;color:#fff;font-family:Arial,sans-serif;text-align:center}
+h1{margin:22px 0 8px;font-size:30px}
+#status{color:#aaa;margin-bottom:12px}
+#wrap{width:min(95vw,700px);margin:auto}
+video{width:100%;border-radius:18px;background:#151515;transform:scaleX(-1)}
+#count{font-size:72px;font-weight:800;margin:12px 0 4px}
+#quality{font-size:18px;color:#aaa;min-height:25px}
+button{border:0;border-radius:12px;padding:14px 22px;margin:12px 5px;font-size:17px;font-weight:bold}
+#start{background:#22c55e;color:#000}
+#stop{background:#ef4444;color:#fff}
+small{display:block;color:#777;margin:12px}
+</style>
+</head>
+<body>
+<h1>Push-Up Counter</h1>
+<div id="status">Tap Start Camera</div>
+<div id="wrap">
+<video id="video" autoplay playsinline muted></video>
+<div id="count">0</div>
+<div id="quality">Camera ready</div>
+<button id="start">Start Camera</button>
+<button id="stop">Stop</button>
+<small>Keep your full upper body visible. Use good lighting and place the phone sideways.</small>
+</div>
+
+<script>
+const video=document.getElementById("video");
+const countEl=document.getElementById("count");
+const statusEl=document.getElementById("status");
+const qualityEl=document.getElementById("quality");
+let stream=null, running=false, reps=0, state="up";
+let lastMotion=0, lastY=null;
+
+async function startCamera(){
+  try{
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      throw new Error("Camera API unavailable. Open this page through GitHub Pages HTTPS.");
+    }
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:"user",width:{ideal:1280},height:{ideal:720}},
+      audio:false
+    });
+    video.srcObject=stream;
+    running=true;
+    statusEl.textContent="Camera ON — get into push-up position";
+    qualityEl.textContent="Move slowly and keep your body visible";
+    requestAnimationFrame(processFrame);
+  }catch(e){
+    statusEl.textContent="Camera error: "+e.message;
+    qualityEl.textContent="Allow camera permission and use the HTTPS GitHub Pages URL.";
+  }
+}
+
+function stopCamera(){
+  running=false;
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  stream=null;
+  video.srcObject=null;
+  statusEl.textContent="Camera stopped";
+}
+
+function processFrame(){
+  if(!running)return;
+
+  /*
+   Simple motion detector:
+   It uses the camera image itself to estimate vertical movement.
+   This is intentionally lightweight so the HTML works without
+   external libraries or downloads.
+  */
+  const c=document.createElement("canvas");
+  const ctx=c.getContext("2d",{willReadFrequently:true});
+  c.width=80;c.height=60;
+
+  function sample(){
+    if(!running)return;
+    ctx.drawImage(video,0,0,c.width,c.height);
+    const data=ctx.getImageData(0,0,c.width,c.height).data;
+
+    let total=0, weighted=0;
+    for(let y=0;y<c.height;y++){
+      for(let x=0;x<c.width;x++){
+        const i=(y*c.width+x)*4;
+        const brightness=(data[i]+data[i+1]+data[i+2])/3;
+        if(brightness<100){
+          total++;
+          weighted+=y;
+        }
+      }
+    }
+
+    if(total>50){
+      const y=weighted/total;
+      if(lastY!==null){
+        const delta=y-lastY;
+        const now=performance.now();
+
+        if(now-lastMotion>700){
+          if(delta>2.0 && state==="up"){
+            state="down";
+            qualityEl.textContent="Down";
+          }else if(delta<-2.0 && state==="down"){
+            state="up";
+            reps++;
+            countEl.textContent=reps;
+            qualityEl.textContent="Perfect rep counted ✓";
+            lastMotion=now;
+          }
+        }
+      }
+      lastY=y;
+    }
+    requestAnimationFrame(sample);
+  }
+  sample();
+}
+
+document.getElementById("start").onclick=startCamera;
+document.getElementById("stop").onclick=stopCamera;
+</script>
+</body>
+</html>
